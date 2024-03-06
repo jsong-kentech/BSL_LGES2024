@@ -9,10 +9,10 @@ clear; clc; close all
 %% Configurations
 
 % EIS data path
-    path_folder = 'G:\공유 드라이브\BSL-Data\LGES\12_6cm2_soc10_EIS # Sample 2';
+    path_folder = 'G:\Shared drives\BSL-Data\LGES\LG raw data\12_6cm2_soc10_EIS # Sample 2';
     name_file = 'PEIS_C11_cathode_cycle_soc70.csv';
 
-% SOC and T 
+% SOC and T (for initial guess - they are functions of soc, T)
     soc = 0.7; % [1]
     T = 298.15; %[K]
 
