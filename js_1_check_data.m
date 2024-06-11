@@ -6,7 +6,7 @@ sample =1;
 
 
 if sample ==1
-    folderpath = 'G:\공유 드라이브\BSL-Data\LGES\12_6cm2_soc10_EIS # Sample 1';
+    folderpath = 'G:\Shared drives\BSL-Data\LGES\LG raw data\12_6cm2_soc10_EIS # Sample 1';
     filelist = {'PEIS_C09_anode_cycle_soc30.csv','PEIS_C09_anode_cycle_soc50.csv','PEIS_C09_anode_cycle_soc90.csv';...
             'PEIS_C09_cathode_cycle_soc30.csv','PEIS_C09_cathode_cycle_soc50.csv','PEIS_C09_cathode_cycle_soc90.csv';...
             'PEIS_C09_full_cycle_soc30.csv','PEIS_C09_full_cycle_soc50.csv','PEIS_C09_full_cycle_soc90.csv'};
@@ -23,6 +23,7 @@ end
 
 
 % check if anode and cathode sum up to full cell
+c_mat = lines(3);
 
 figure(1)
 for i_soc = 1:size(filelist,2)
@@ -33,7 +34,7 @@ for i_soc = 1:size(filelist,2)
         z_now = load([folderpath filesep filelist{i_acf,i_soc}]);
 
         subplot(1,3,i_soc)
-        plot(z_now(:,2),-z_now(:,3)); hold on
+        plot(z_now(:,2),-z_now(:,3),'o','color',c_mat(i_acf,:)); hold on
 
 
     end
@@ -46,6 +47,6 @@ for i_soc = 1:size(filelist,2)
     z_combined_now = z_anode_now + z_cathode_now;
 
     subplot(1,3,i_soc)
-    plot(z_combined_now(:,2),-z_combined_now(:,3),'o')
+%    plot(z_combined_now(:,2),-z_combined_now(:,3),'o')
     
 end

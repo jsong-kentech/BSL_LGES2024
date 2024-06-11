@@ -1,4 +1,4 @@
-function [output,paras] = BSL_func_EISmodel(f_vector,factors,soc,T,type_acf)
+function [output,paras] = BSL_func_EISmodel_V2_half_Dist(f_vector,factors,soc,T,type_acf,type_dist)
 
 % Notes: 			This is an analytical model to predict the EIS for a full cell with intercalation based electrodes, separated by an ion conducting separator. The numerical equivalent was developed in COMSOL and compared to
 % 					the analytical model in J. Electrochem. Soc. 2007 volume 154, issue 1,A43-A54 
@@ -43,6 +43,11 @@ addpath('C:\Users\jsong\Documents\MATLAB\BSL_EIS\1_standalone\interpolations')
     ka = factors(2)*ka_function(x,T,cta); % {modified}
     kc = factors(2)*kc_function(y,T,ctc); % {modified}
     c_e_ref = 1000; % {modified} [mol/m3] reference concetration of electrolyte
+
+    % Distribution parameters % LGES V2 2024 05 % HERE - ADD FACTORS
+    mean_ra = 1;                        mean_rc = 1;
+    std_ra = factors(end);                       std_rc = factors(end);      % [*+*] thse are parameters for observed lognormal distribution, dimensionless
+    [mu_ra,sig_ra] = normal_para(mean_ra,std_ra); [mu_rc,sig_rc] = normal_para(mean_rc,std_rc); % converting them to parameters of underlying normal distribution
 
 
     % Porous electrode
@@ -131,20 +136,12 @@ spc=1i*omegagen(k);      %   s2c                 %[refer to list of symbols]
 Rcta=R*T/i0a/F/(alphaa+alphac);                 %[refer to list of symbols]        
 Rctc=R*T/i0c/F/(alphaa+alphac);                 %[refer to list of symbols]        
 
-Rdifa=-dUdca*Rpa/Dsa/F;                         %[refer to list of symbols]        
-Rdifc=-dUdcc*Rpc/Dsc/F;                         %[refer to list of symbols]        
+paraa = [dUdca,Rpa,Dsa,F,spa,Cdla,Rcta,C_filma,Rfa,mu_ra,sig_ra]; % LGES V2 2024 05
+parac = [dUdcc,Rpc,Dsc,F,spc,Cdlc,Rctc,C_filmc,Rfc,mu_rc,sig_rc]; % LGES V2 2024 05
 
-Ysa=(sqrt(spa*Rpa^2/Dsa)-tanh(sqrt(spa*Rpa^2/Dsa)))/tanh(sqrt(spa*Rpa^2/Dsa));  % JS: dimensionless solid diffusion admittance [1]
-Ysc=(sqrt(spc*Rpc^2/Dsc)-tanh(sqrt(spc*Rpc^2/Dsc)))/tanh(sqrt(spc*Rpc^2/Dsc));  % JS: dimensionless solid diffusion admittance [1]
-
-zetaa = spa*Cdla + 1/(Rcta+Rdifa/Ysa);          % particle local admittance [m2/ohm]
-zetac = spc*Cdlc + 1/(Rctc+Rdifc/Ysc);          % particle local admittance [m2/ohm]
-
-
-%New Beta based on Meyers Case 2
-betaa = 1/F*(spa * C_filma + 1/(1/zetaa+Rfa));  % local impedance [m2/ohm] times (1/F)
-betac = 1/F*(spc * C_filmc + 1/(1/zetac+Rfc));  % local impedance [m2/ohm] times (1/F) 
-
+betaa = beta_func(paraa,type_dist); % LGES V2 2024 05
+betac = beta_func(parac,type_dist); % LGES V2 2024 05
+% local impedance [m2/ohm] times (1/F) 
 %1/betaa(c)/F=Z_p,i in the manuscript (refer to eqn [9])
 
 %*******************************************************
@@ -317,10 +314,10 @@ plot(real(c_imp(1:N)+a_imp(1:N)+s_imp(1:N))*1e4,-imag(c_imp(1:N)+a_imp(1:N)+s_im
  
 if type_acf ==1 % anode
     output = [R_itsc+(1/A_coat)*real(a_imp.'),(1/A_coat)*imag(a_imp.')];
-    paras =[R_itsc, i0a, Cdla, Dsa, kappa, Di0, aa];
+    paras =[R_itsc, i0a, Cdla, Dsa, kappa, Di0, aa, std_ra]';
 elseif type_acf ==2 % cathode
     output = [R_itsc+(1/A_coat)*real(c_imp.'),(1/A_coat)*imag(c_imp.')];
-    paras =[R_itsc, i0c, Cdlc, Dsc, kappa, Di0, ac];
+    paras =[R_itsc, i0c, Cdlc, Dsc, kappa, Di0, ac, std_rc]';
 elseif type_acf ==3 % full cell
     error('not ready for full cell fitting yet')
     %output = [R_itsc+(1/A_coat)*real(fc_imp.'),(1/A_coat)*imag(fc_imp.')];
@@ -331,3 +328,66 @@ end
 
 
 end
+
+function beta = beta_func(para,type_dist) % LGES V2 2024 05
+% para = [dUdc,Rp,Ds,F,sp,Cdl,Rct,C_film,Rf,mu,sig]
+    if para(11) > 0.001
+        if type_dist == 0 % drt
+            upper_func = @(t)lognpdf(t,para(10),para(11)).*zloc_func_drt(t,para); upper = integral(upper_func,0.001,100);
+            down_func = @(t)lognpdf(t,para(10),para(11)); down = integral(down_func,0.001,100);
+            beta = (upper./down)^-1/para(4);
+        elseif type_dist == 1 % ddt
+            upper_func = @(t)lognpdf(t,para(10),para(11)).*yloc_func_ddt(t,para); upper = integral(upper_func,0.001,100);
+            down_func = @(t)lognpdf(t,para(10),para(11)); down = integral(down_func,0.001,100);
+            beta = upper./down/para(4);
+        end
+
+    else
+        beta = yloc_func_ddt(1,para)/para(4);
+    end
+end
+
+function yloc = yloc_func_ddt(t,para) % LGES V2 2024 05
+% para = [dUdc,Rp,Ds,F,sp,Cdl,Rct,C_film,Rf,mu,sig]; 
+
+% Rdif=-dUdc*Rp/Ds/F;
+Rdif = - para(1)*para(2)/para(3)/para(4);
+% Ys=(sqrt(sp*Rp^2/Ds)-tanh(sqrt(sp*Rp^2/Ds)))/tanh(sqrt(sp*Rp^2/Ds))
+Ys=(sqrt(para(5)*t*(para(2)).^2/para(3))-tanh(sqrt(para(5)*t*(para(2)).^2/para(3))))./tanh(sqrt(para(5)*t*(para(2)).^2/para(3)));  
+% zeta = sp*Cdl + 1/(Rct+Rdif/Ys);          %[Eqn [9] in the paper]
+zeta = para(5)*para(6) + 1./(para(7)+Rdif./Ys);          %[Eqn [9] in the paper]
+
+%New Beta based on Meyers Case 2
+yloc = para(5)*para(8) + 1./(1./zeta+para(9));  % edit -GS  [Eqn[8] in the paper]
+
+end
+
+
+function zloc = zloc_func_drt(t,para) % LGES V2 2024 05
+% para = [dUdc,Rp,Ds,F,sp,Cdl,Rct,C_film,Rf,mu,sig]; 
+
+% Rdif=-dUdc*Rp/Ds/F;
+Rdif = - para(1)*para(2)/para(3)/para(4);
+% Ys=(sqrt(sp*Rp^2/Ds)-tanh(sqrt(sp*Rp^2/Ds)))/tanh(sqrt(sp*Rp^2/Ds))
+Ys=(sqrt(para(5)*(para(2)).^2/para(3))-tanh(sqrt(para(5)*(para(2)).^2/para(3))))./tanh(sqrt(para(5)*(para(2)).^2/para(3)));  
+% zeta = sp*Cdl + 1/(Rct+Rdif/Ys);          %[Eqn [9] in the paper]
+zeta = para(5)*para(6)*t + 1./(para(7)+Rdif./Ys);          %[Eqn [9] in the paper]
+
+%New Beta based on Meyers Case 2
+yloc = para(5)*para(8) + 1./(1./zeta+para(9));  % edit -GS  [Eqn[8] in the paper]
+
+zloc = yloc.^-1;
+end
+
+
+function [mu,sig]=normal_para(mean,std) % LGES V2 2024 05
+% converting parameters of observed lognormal distribution
+% to parameters of underlying normal distribution
+m=mean;
+v=std^2;
+mu=log(m^2/(v+m^2)^0.5);
+sig=(log(v/m^2+1))^0.5;
+
+
+end
+
